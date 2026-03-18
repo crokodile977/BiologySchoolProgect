@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Симуляция бактерий — Чашка Петри v2</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root {
+      --bg:         #e8e8e8;
+      --panel:      #f2f2f2;
+      --border:     #d0d0d0;
+      --accent:     #444;
+      --accent2:    #666;
+      --danger:     #888;
+      --warn:       #777;
+      --text:       #2a2a2a;
+      --text-dim:   #999;
+      --font-ui:    'JetBrains Mono', monospace;
+      --font-title: 'Syne', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-ui); font-size: 13px;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; padding: 20px 16px 40px; gap: 20px;
+    }
+    header { text-align: center; }
+    header h1 { font-family: var(--font-title); font-size: clamp(22px,4vw,36px); font-weight: 800; letter-spacing: -1px; color: #1a1a1a; }
+    header h1 span { color: #555; }
+    header p { color: var(--text-dim); font-size: 12px; margin-top: 4px; letter-spacing: .05em; }
+    .layout { display: flex; gap: 20px; align-items: flex-start; width: 100%; max-width: 1100px; }
+    .petri-wrap { position: relative; flex: 0 0 auto; }
+    #petriCanvas {
+      display:block; border-radius:50%; cursor:crosshair; position:relative; z-index:1;
+      box-shadow: 0 0 0 2px #bbb, 0 20px 60px rgba(0,0,0,.2);
+    }
+    .petri-label {
+      position:absolute; bottom:-28px; left:50%; transform:translateX(-50%);
+      font-size:10px; letter-spacing:.2em; color:var(--text-dim);
+      white-space:nowrap; text-transform:uppercase;
+    }
+    .sidebar { flex:1; display:flex; flex-direction:column; gap:14px; min-width:220px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
+    .card-title {
+      font-family:var(--font-title); font-size:11px; font-weight:700;
+      letter-spacing:.15em; text-transform:uppercase; color:var(--text-dim); margin-bottom:12px;
+    }
+    .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .stat-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+    .stat-label { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.1em; }
+    .stat-value { font-size:22px; font-weight:600; color:#333; line-height:1.2; }
+    .stat-value.danger { color:#777; }
+    .stat-value.warn   { color:#888; }
+    .stat-value.blue   { color:#555; }
+    .stat-value.corpse { color:#999; }
+    /* Полоска еды */
+    .food-bar-wrap {
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:8px; padding:10px 12px; grid-column:1/-1;
+    }
+    .food-bar-label {
+      font-size:10px; color:var(--text-dim); text-transform:uppercase;
+      letter-spacing:.1em; display:flex; justify-content:space-between; margin-bottom:6px;
+    }
+    .food-bar-track { height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+    .food-bar-fill {
+      height:100%; border-radius:3px;
+      background: #aaa;
+      transition:width .25s;
+    }
+    .btn-group { display:flex; flex-direction:column; gap:8px; }
+    .btn {
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      border:none; border-radius:8px; padding:11px 16px;
+      font-family:var(--font-ui); font-size:12px; font-weight:600;
+      letter-spacing:.05em; cursor:pointer; transition:transform .1s,box-shadow .2s; user-select:none;
+    }
+    .btn:active { transform:scale(.97); }
+    .btn-primary  { background:#d8d8d8; color:#222; border:1px solid #bbb; box-shadow:none; }
+    .btn-primary:hover  { background:#cccccc; border-color:#aaa; }
+    .btn-danger   { background:#e0e0e0; color:#555; border:1px solid #ccc; box-shadow:none; }
+    .btn-danger:hover   { background:#d4d4d4; border-color:#bbb; }
+    .btn-secondary { background:var(--bg); border:1px solid var(--border); color:#777; }
+    .btn-secondary:hover { border-color:#999; color:#444; }
+    .legend { display:flex; flex-direction:column; gap:7px; }
+    .legend-item { display:flex; align-items:center; gap:10px; font-size:11px; color:var(--text); }
+    .legend-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+    .slider-row { display:flex; flex-direction:column; gap:4px; }
+    .slider-row label {
+      font-size:10px; color:var(--text-dim); text-transform:uppercase;
+      letter-spacing:.1em; display:flex; justify-content:space-between;
+    }
+    .slider-row label span { color:var(--accent); }
+    input[type="range"] { -webkit-appearance:none; width:100%; height:4px; background:var(--border); border-radius:2px; outline:none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; background:#999; border-radius:50%; cursor:pointer; box-shadow:none; }
+    .hint { font-size:10px; color:var(--text-dim); text-align:center; letter-spacing:.05em; }
+    .hint b { color:#555; font-weight:600; }
+    #toast {
+      position:fixed; top:24px; left:50%;
+      transform:translateX(-50%) translateY(-80px);
+      background:#555; color:#f0f0f0;
+      font-family:var(--font-title); font-size:14px; font-weight:700;
+      padding:12px 28px; border-radius:40px; border:1px solid #777;
+      box-shadow:0 8px 40px rgba(0,0,0,.2); letter-spacing:.1em;
+      transition:transform .4s cubic-bezier(.34,1.56,.64,1);
+      z-index:999; pointer-events:none;
+    }
+    #toast.show { transform:translateX(-50%) translateY(0); }
+    @media(max-width:700px) {
+      .layout { flex-direction:column; align-items:center; }
+      .sidebar { width:100%; max-width:500px; }
+    }
+    .signature { font-family: var(--font-title); font-size: 13px; color: #bbb; letter-spacing: 0.08em; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🧫 Чашка <span>Петри</span></h1>
+  <p>Еда · Голод · Трупы → Питание · Кворум-сенсинг · Run-and-tumble</p>
+</header>
+
+<div id="toast">⚗️ АНТИБИОТИК ДОБАВЛЕН</div>
+
+<div class="layout">
+  <div class="petri-wrap">
+    <canvas id="petriCanvas"></canvas>
+    <div class="petri-label">Питательная среда · Agar Plate</div>
+  </div>
+
+  <div class="sidebar">
+
+    <div class="card">
+      <div class="card-title">📊 Статистика</div>
+      <div class="stats-grid">
+        <div class="stat-item"><div class="stat-label">Живых</div><div class="stat-value" id="statTotal">0</div></div>
+        <div class="stat-item"><div class="stat-label">Время</div><div class="stat-value blue" id="statTime">0:00</div></div>
+        <div class="stat-item"><div class="stat-label">Умерло</div><div class="stat-value danger" id="statDead">0</div></div>
+        <div class="stat-item"><div class="stat-label">Делений</div><div class="stat-value warn" id="statDiv">0</div></div>
+        <div class="stat-item"><div class="stat-label">Трупов</div><div class="stat-value corpse" id="statCorpses">0</div></div>
+        <div class="stat-item"><div class="stat-label">Устойчивость</div><div class="stat-value" id="statResist">0%</div></div>
+        <div class="stat-item"><div class="stat-label">Еда (ед.)</div><div class="stat-value" id="statFood">500</div></div>
+        <div class="stat-item" style="grid-column:1/-1">
+          <div class="stat-label">Ср. выживаемость</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+            <div style="flex:1;height:5px;background:#2e2e32;border-radius:3px;overflow:hidden;">
+              <div id="vitBar" style="height:100%;width:50%;border-radius:3px;background:linear-gradient(90deg,#c0392b,#f1c40f,#27ae60);transition:width .3s;"></div>
+            </div>
+            <span id="statVit" style="font-size:14px;font-weight:600;color:#aaa;min-width:36px;text-align:right;">—</span>
+          </div>
+        </div>
+        <div class="food-bar-wrap">
+          <div class="food-bar-label"><span>Запас питания в среде</span><span id="foodPct">100%</span></div>
+          <div class="food-bar-track"><div class="food-bar-fill" id="foodBar" style="width:100%"></div></div>
+        </div>
+        <div class="food-bar-wrap">
+          <div class="food-bar-label"><span>Устойчивость к антибиотику</span><span id="resPct">0%</span></div>
+          <div class="food-bar-track">
+            <div id="resBar" style="height:100%;width:0%;border-radius:3px;background:linear-gradient(90deg,#27ae60,#f1c40f,#c0392b);transition:width .4s;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🎮 Управление</div>
+      <div class="btn-group">
+        <button class="btn btn-primary"   id="btnStartPause">▶ Старт</button>
+        <button class="btn btn-secondary" id="btnAddFood">🍬 +50 единиц еды</button>
+        <button class="btn btn-danger"    id="btnAntibiotic">💊 Добавить антибиотик</button>
+        <button class="btn btn-secondary" id="btnClear">🗑 Очистить поле</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚙️ Параметры</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="slider-row">
+          <label>Скорость симуляции <span id="valSpeed">1×</span></label>
+          <input type="range" id="sliderSpeed" min="1" max="5" value="1" step="1"/>
+        </div>
+        <div class="slider-row">
+          <label>Макс. популяция <span id="valMax">200</span></label>
+          <input type="range" id="sliderMax" min="30" max="400" value="200" step="10"/>
+        </div>
+        <div class="slider-row">
+          <label>Смертность антибиотика <span id="valKill">70%</span></label>
+          <input type="range" id="sliderKill" min="10" max="100" value="70" step="10"/>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔬 Легенда</div>
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#00e5a0;border-radius:3px;width:16px;height:8px;"></div>
+          Тип A — Bacillus (быстрый, 2 жгутика)
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#00aaff;"></div>
+          Тип B — Coccus (экономный, без жгутика)
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#ffaa00;border-radius:3px;width:14px;height:8px;"></div>
+          Тип C — Vibrio (средний, 1 жгутик)
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#888;"></div>
+          Голодающая бактерия
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#6b3318;border:1px solid #8b5030;"></div>
+          Труп (еда добавляется мгновенно)
+        </div>
+        <div class="legend-item">
+          <div style="width:16px;height:8px;border-radius:2px;flex-shrink:0;background:linear-gradient(90deg,#c0392b,#f1c40f,#27ae60);"></div>
+          Точка в центре = выживаемость
+        </div>
+        <div class="legend-item">
+          <div style="width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#27ae60,#c0392b);flex-shrink:0;"></div>
+          Точка = выживаемость (зелёная/красная)
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:rgba(255,255,70,.3);border:1px dashed #aaaa30;"></div>
+          Питательное пятно
+        </div>
+      </div>
+    </div>
+
+    <div class="hint">
+      <b>Клик</b> по чашке — добавить бактерию<br/>
+      Деление = 1 ед. еды · Жизнь = 0.5 ед./цикл<br/>
+      Труп лежит 10 сек → разлагается → +0.8 ед. еды
+    </div>
+
+    <div class="card">
+      <div class="card-title">📈 Популяция в реальном времени</div>
+      <canvas id="chartCanvas" width="260" height="110" style="width:100%;display:block;border-radius:6px;"></canvas>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:#999;letter-spacing:.05em;">
+        <span id="chartMin">0</span>
+        <span style="color:#bbb;">— последние 120 сек —</span>
+        <span id="chartMax">0</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/*
+════════════════════════════════════════════════════════════════════
+  СИМУЛЯЦИЯ БАКТЕРИЙ v4 — Полная пищевая экономика
+  ─────────────────────────────────────────────────────────────────
+
+  МЕХАНИКИ ПИТАНИЯ:
+
+  • foodPool — единый глобальный запас еды (начало: MAX_FOOD=500).
+    Еда НЕ восстанавливается автоматически — только через трупы.
+
+  • Каждые FEED_INTERVAL мс бактерия тратит FOOD_SURVIVE=0.5 ед.
+    Нет еды → hunger растёт → при hunger=1 бактерия умирает.
+
+  • Деление требует FOOD_DIVIDE=1.0 ед. из пула.
+    Если еды нет — рост «заморожен», деление ждёт.
+
+  • Труп (Corpse):
+    - Мёртвая бактерия НЕ исчезает, а ложится на месте смерти.
+    - Видна весь период разложения (DECOMPOSE_TIME=10 сек).
+    - Визуально темнеет и даёт зелёный ореол в конце.
+    - По истечении срока добавляет CORPSE_FOOD=0.8 ед. в пул.
+
+  ДВИЖЕНИЕ:
+  • Run-and-tumble с хемотаксисом на основе памяти концентрации.
+  • При голоде: более частые кувырки, сильнее ищет еду.
+  • Тип A потребляет на 10% больше (2 жгутика = энергозатраты).
+  • Тип B самый экономный (без жгутиков).
+
+  ПРОЧЕЕ:
+  • Кворум-сенсинг подавляет деление при скоплении.
+  • Анимированное бинарное деление (splitting).
+  • Жгутик: чёткая волна при run, хаос при tumble.
+════════════════════════════════════════════════════════════════════
+*/
+
+// ─────────────────────────────────────────────
+// КОНСТАНТЫ
+// ─────────────────────────────────────────────
+const CANVAS_SIZE  = 500;
+const PETRI_RADIUS = 238;
+const QS_RADIUS    = 40;    // радиус кворум-сенсинга (px)
+const QS_THRESHOLD = 8;     // соседей для подавления деления
+
+// Пищевая экономика
+const MAX_FOOD       = 500;  // начальный запас
+const FOOD_SURVIVE   = 0.5;  // ед. за один цикл питания (поддержание жизни)
+const FOOD_DIVIDE    = 1.0;  // ед. для одного деления
+const FEED_INTERVAL  = 3000; // мс (игр.) между циклами потребления
+const CORPSE_FOOD    = 0.9;  // ед. выделяет один труп
+const DECOMPOSE_TIME = 1500;// мс (игр.) — только визуальное затухание, еда даётся мгновенно
+
+// Глобальный пул еды
+let foodPool = MAX_FOOD;
+
+// Визуальные питательные пятна (хемоаттракторы)
+let nutrientSpots = [];
+
+// ─────────────────────────────────────────────
+// ТИПЫ БАКТЕРИЙ
+// ─────────────────────────────────────────────
+const TYPES = {
+  A: {
+    baseLen:9, baseWid:3.5, speed:1.6, runTime:600, divisionTime:4000,
+    color:'#00e5a0', glow:'rgba(0,229,160,0.3)',
+    chemo:0.75, qsSensitivity:0.9, hasFlagella:true, flagellaCount:2,
+    metabolismMult:1.1,  // 2 жгутика = +10% расход
+  },
+  B: {
+    baseLen:5, baseWid:4.5, speed:0.8, runTime:250, divisionTime:7500,
+    color:'#00aaff', glow:'rgba(0,170,255,0.3)',
+    chemo:0.25, qsSensitivity:0.5, hasFlagella:false, flagellaCount:0,
+    metabolismMult:0.8,  // без жгутиков — экономичный
+  },
+  C: {
+    baseLen:7, baseWid:3.2, speed:1.2, runTime:450, divisionTime:11000,
+    color:'#ffaa00', glow:'rgba(255,170,0,0.3)',
+    chemo:0.55, qsSensitivity:0.7, hasFlagella:true, flagellaCount:1,
+    metabolismMult:1.0,
+  },
+};
+const TYPE_KEYS = Object.keys(TYPES);
+
+// ─────────────────────────────────────────────
+// ПИТАТЕЛЬНЫЕ ПЯТНА (визуальные)
+// ─────────────────────────────────────────────
+function generateNutrients() {
+  nutrientSpots = [];
+  foodPool = MAX_FOOD;
+  const cx = CANVAS_SIZE / 2, cy = CANVAS_SIZE / 2;
+  const n  = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * PETRI_RADIUS * 0.65;
+    nutrientSpots.push({
+      x: cx + Math.cos(a) * r,
+      y: cy + Math.sin(a) * r,
+      radius: 45 + Math.random() * 55,
+    });
+  }
+}
+
+/*
+  Вектор хемотаксиса. При голоде (мало еды) сигнал усиливается —
+  бактерии активнее ищут питание.
+*/
+function chemoGradient(x, y) {
+  let gx = 0, gy = 0;
+  const urgency = 1.2 - Math.min(1, foodPool / MAX_FOOD) * 0.8;
+  for (const s of nutrientSpots) {
+    const dx = s.x - x, dy = s.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < s.radius * s.radius) {
+      const d = Math.sqrt(d2) + 0.1;
+      const f = urgency / (1 + d * 0.04);
+      gx += (dx / d) * f;
+      gy += (dy / d) * f;
+    }
+  }
+  return { gx, gy };
+}
+
+// Концентрация в точке (для run-length памяти)
+function nutrientConc(x, y) {
+  let t = 0;
+  for (const s of nutrientSpots) {
+    const d = Math.hypot(x - s.x, y - s.y);
+    if (d < s.radius) t += 1 - d / s.radius;
+  }
+  return t;
+}
+
+// Кол-во живых соседей в радиусе (кворум-сенсинг)
+function countNeighbors(b, all) {
+  let n = 0;
+  for (const o of all) {
+    if (o === b || o.state !== 'alive') continue;
+    if (Math.hypot(o.x - b.x, o.y - b.y) < QS_RADIUS) n++;
+  }
+  return n;
+}
+
+// ─────────────────────────────────────────────
+// КЛАСС: Труп
+// Остаётся на месте смерти, медленно разлагается,
+// затем пополняет foodPool.
+// ─────────────────────────────────────────────
+class Corpse {
+  constructor(x, y, type, angle) {
+    this.x     = x;
+    this.y     = y;
+    this.type  = type;
+    this.angle = angle;
+    // Таймер разложения в игровом времени (мс)
+    this.timer   = DECOMPOSE_TIME;
+    this.opacity = 0.85;
+    this.done    = false; // true = удалить + добавить еду
+  }
+
+  update(realDt) {
+    this.timer  -= realDt;
+    this.opacity = Math.max(0, (this.timer / DECOMPOSE_TIME) * 0.7);
+    if (this.timer <= 0) {
+      // Еда уже добавлена при создании трупа — просто удаляем
+      this.done = true;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// КОНСТАНТЫ ВЫЖИВАЕМОСТИ
+// ─────────────────────────────────────────────
+/*
+  vitality (выживаемость) — число от 0.0 до 1.0.
+  Влияет на:
+    • скорость роста голода: слабая клетка голодает быстрее
+    • порог смерти от голода: слабые умирают раньше
+    • скорость роста (деление): сильные делятся быстрее
+    • наследование: потомок получает vitality родителя
+      ± VITALITY_MUTATION (случайный сдвиг)
+
+  При рождении (первое поколение) — полностью случайное значение.
+  Принцип «выживает сильнейший»: слабые умирают до деления,
+  сильные передают высокую выживаемость потомкам.
+*/
+const VITALITY_MUTATION = 0.15; // разброс мутации ±15%
+
+// ─────────────────────────────────────────────
+// КЛАСС: Бактерия
+// ─────────────────────────────────────────────
+class Bacterium {
+  /*
+    @param vitality  — наследованная выживаемость (0..1).
+                       Если не передана — случайная (первое поколение).
+  */
+  constructor(x, y, type, angle, vitality) {
+    const cfg  = TYPES[type];
+    this.x     = x;
+    this.y     = y;
+    this.type  = type;
+    this.angle = (angle !== undefined) ? angle : Math.random() * Math.PI * 2;
+
+    // ── Выживаемость ──────────────────────────────────────────────
+    // Если передана от родителя — берём её ± случайная мутация
+    // Если нет (первое поколение / добавлена кликом) — полностью случайная
+    if (vitality !== undefined) {
+      const mutation = (Math.random() * 2 - 1) * VITALITY_MUTATION;
+      this.vitality  = Math.max(0.05, Math.min(1.0, vitality + mutation));
+    } else {
+      this.vitality = Math.random(); // 0..1, равномерное распределение
+    }
+
+    // Run-and-tumble
+    this.mode         = 'run';
+    this.runTimer     = cfg.runTime * (0.5 + Math.random());
+    this.tumbleLeft   = 0;
+    this.tumbleTarget = 0;
+
+    // Хемотаксис с памятью
+    this.concNow  = 0;
+    this.concPrev = 0;
+    this.memTimer = 0;
+
+    // Рост / деление
+    // Сильные клетки (высокая vitality) делятся быстрее
+    this.growPhase    = Math.random();
+    this.divisionTime = cfg.divisionTime * (0.8 + Math.random() * 0.4)
+                        * (1.8 - this.vitality * 1.2); // vitality=1 → ×0.6, vitality=0 → ×1.8
+    this.lenScale     = 0.6 + Math.min(this.growPhase, 1) * 0.4;
+
+    // Питание
+    this.feedTimer = FEED_INTERVAL * (0.3 + Math.random() * 0.7);
+
+    // Голод: 0 = сыта, 1 = умирает
+    this.hunger = 0;
+
+    // Кворум-сенсинг
+    this.qsInhibition = 0;
+    this.qsTimer      = 200 + Math.random() * 300;
+
+    // Состояние
+    this.state         = 'alive'; // 'alive' | 'splitting' | 'dying'
+    this.opacity       = 1;
+    this.dead          = false;
+    this.splitProgress = 0;
+
+    // Жгутик
+    this.flagellaPhase = Math.random() * Math.PI * 2;
+    this.flagellaSpeed = 0.10;
+    this.flagellaChaos = 0;
+  }
+
+  /*
+    Обновление за тик.
+    @returns true — готова делиться (и еда есть)
+  */
+  update(dt, speedMult, allBacteria) {
+    const realDt = dt * speedMult;
+    const cfg    = TYPES[this.type];
+
+    // Анимация смерти
+    if (this.state === 'dying') {
+      this.opacity -= 0.020 * speedMult;
+      if (this.opacity <= 0) this.dead = true;
+      return false;
+    }
+    if (this.state === 'splitting') return false;
+
+    // ── Цикл питания ────────────────────────────────────────────
+    this.feedTimer -= realDt;
+    if (this.feedTimer <= 0) {
+      this.feedTimer = FEED_INTERVAL;
+
+      // Сколько еды нужно этой бактерии за цикл
+      const cost = FOOD_SURVIVE * cfg.metabolismMult;
+
+      if (foodPool >= cost) {
+        // Едим
+        foodPool -= cost;
+        // Сильные клетки восстанавливаются быстрее
+        this.hunger = Math.max(0, this.hunger - 0.4 - this.vitality * 0.3);
+      } else {
+        // Еды нет — голодаем
+        const ate = Math.min(foodPool, cost);
+        foodPool = Math.max(0, foodPool - ate);
+        const satiation = ate / cost; // 0..1
+        // Слабые клетки (низкий vitality) накапливают голод быстрее
+        const hungerGain = (1 - satiation) * (0.7 - this.vitality * 0.5);
+        this.hunger = Math.min(1, this.hunger + hungerGain);
+
+        // Порог смерти зависит от выживаемости:
+        // vitality=0.0 → умирает при hunger=0.4
+        // vitality=1.0 → умирает при hunger=1.0
+        const deathThreshold = 0.4 + this.vitality * 0.6;
+        if (this.hunger >= deathThreshold) {
+          this.state = 'dying';
+          return false;
+        }
+      }
+    }
+
+    // ── Хемотаксис с памятью ────────────────────────────────────
+    this.memTimer += realDt;
+    if (this.memTimer > 300) {
+      this.concPrev = this.concNow;
+      this.concNow  = nutrientConc(this.x, this.y);
+      this.memTimer = 0;
+    }
+
+    // ── Кворум-сенсинг ──────────────────────────────────────────
+    this.qsTimer -= realDt;
+    if (this.qsTimer <= 0) {
+      const n = countNeighbors(this, allBacteria);
+      this.qsInhibition = Math.min(1, (n / QS_THRESHOLD) * cfg.qsSensitivity);
+      this.qsTimer = 300 + Math.random() * 400;
+    }
+
+    // ── Движение: RUN ────────────────────────────────────────────
+    if (this.mode === 'run') {
+      // Хемотаксис: поворот к источнику питания
+      if (cfg.chemo > 0) {
+        const { gx, gy } = chemoGradient(this.x, this.y);
+        const gLen = Math.sqrt(gx * gx + gy * gy);
+        if (gLen > 0.05) {
+          const gAngle = Math.atan2(gy, gx);
+          let diff = gAngle - this.angle;
+          while (diff >  Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          this.angle += diff * cfg.chemo * 0.010 * speedMult;
+        }
+      }
+
+      // Тепловой шум — голодные «нервничают» сильнее
+      const noise = 0.13 + this.hunger * 0.18;
+      this.angle += (Math.random() - 0.5) * noise * speedMult;
+
+      // Скорость снижается при голоде (нет АТФ)
+      const spd = cfg.speed * (1 - this.hunger * 0.4) * speedMult;
+      const nx  = this.x + Math.cos(this.angle) * spd;
+      const ny  = this.y + Math.sin(this.angle) * spd;
+
+      // Отражение от стенки
+      const cx = CANVAS_SIZE / 2, cy = CANVAS_SIZE / 2;
+      const fd = Math.hypot(nx - cx, ny - cy);
+      if (fd < PETRI_RADIUS - 7) {
+        this.x = nx; this.y = ny;
+      } else {
+        const nx_ = (this.x - cx) / (fd || 1);
+        const ny_ = (this.y - cy) / (fd || 1);
+        const dot = Math.cos(this.angle) * nx_ + Math.sin(this.angle) * ny_;
+        this.angle = Math.atan2(
+          Math.sin(this.angle) - 2 * dot * ny_,
+          Math.cos(this.angle) - 2 * dot * nx_
+        ) + (Math.random() - 0.5) * 0.5;
+      }
+
+      // Run-length: движение к еде = дольше бежим; от еды = кувыряемся
+      const concDiff = this.concNow - this.concPrev;
+      const runMod   = 1 - Math.tanh(concDiff * 8) * 0.5 + this.hunger * 0.9;
+      this.runTimer -= realDt * runMod;
+
+      if (this.runTimer <= 0) {
+        this.mode = 'tumble';
+        // Реальный угол кувырка E.coli ~68°; голодные крутятся сильнее
+        const base  = (Math.PI / 2) + Math.random() * Math.PI;
+        const boost = this.hunger * Math.PI * 0.7;
+        this.tumbleTarget = (base + boost) * (Math.random() > 0.5 ? 1 : -1);
+        this.tumbleLeft   = 40 + Math.random() * 80;
+      }
+
+      this.flagellaSpeed = 0.13 + cfg.speed * 0.04;
+      this.flagellaChaos = Math.max(0, this.flagellaChaos - 0.04 * speedMult);
+
+    // ── Движение: TUMBLE ─────────────────────────────────────────
+    } else {
+      const progress  = 1 - this.tumbleLeft / 180;
+      this.angle     += this.tumbleTarget * 0.025 * speedMult * (1 - progress * 0.5);
+      this.tumbleLeft -= realDt;
+      if (this.tumbleLeft <= 0) {
+        this.mode     = 'run';
+        this.runTimer = cfg.runTime * (0.6 + Math.random() * 0.8);
+      }
+      this.flagellaSpeed = 0.04;
+      this.flagellaChaos = Math.min(1, this.flagellaChaos + 0.05 * speedMult);
+    }
+
+    // Анимация жгутика
+    const pNoise = this.flagellaChaos > 0.5 ? (Math.random() - 0.5) * 0.3 : 0;
+    this.flagellaPhase += (this.flagellaSpeed + pNoise) * speedMult;
+
+    // ── Рост ─────────────────────────────────────────────────────
+    // QS и голод тормозят рост
+    const growRate = (1 - this.qsInhibition * 0.8) * (1 - this.hunger * 0.7);
+    this.growPhase += realDt / this.divisionTime * growRate;
+    this.lenScale   = 0.6 + Math.min(this.growPhase, 1.0) * 0.4;
+
+    // ── Деление: требует 1 ед. еды ───────────────────────────────
+    if (this.growPhase >= 1.0) {
+      // Стоимость деления зависит от выживаемости:
+      // vitality=0.0 → 1.4 ед.  (слабые тратят больше)
+      // vitality=0.5 → 1.0 ед.  (средние — базовая стоимость)
+      // vitality=1.0 → 0.6 ед.  (сильные делятся дёшево)
+      const divCost = FOOD_DIVIDE * (1.4 - this.vitality * 0.8);
+      if (foodPool >= divCost) {
+        foodPool -= divCost;
+        this.growPhase = 0;
+        return true; // сигнал к делению
+      } else {
+        // Нет еды — деление заморожено, ждём
+        this.growPhase = 1.0;
+      }
+    }
+    return false;
+  }
+
+  kill() {
+    if (this.state === 'alive') this.state = 'dying';
+  }
+}
+
+// ─────────────────────────────────────────────
+// КЛАСС: Рендерер
+// ─────────────────────────────────────────────
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx    = canvas.getContext('2d');
+    canvas.width = canvas.height = CANVAS_SIZE;
+  }
+
+  drawBackground() {
+    const ctx = this.ctx, cx = CANVAS_SIZE / 2, cy = CANVAS_SIZE / 2;
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Агар: нейтральный тёмно-серый, чуть светлее при полном запасе еды
+    const h  = Math.max(0.06, foodPool / MAX_FOOD);
+    const v0 = Math.round(22 + h * 10);
+    const v1 = Math.round(16 + h * 6);
+    const v2 = Math.round(10 + h * 4);
+    const ag = ctx.createRadialGradient(cx, cy, 0, cx, cy, PETRI_RADIUS);
+    ag.addColorStop(0,   `rgb(${v0},${v0},${v0})`);
+    ag.addColorStop(0.6, `rgb(${v1},${v1},${v1})`);
+    ag.addColorStop(1,   `rgb(${v2},${v2},${v2})`);
+    ctx.beginPath();
+    ctx.arc(cx, cy, PETRI_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = ag;
+    ctx.fill();
+
+    // Питательные пятна — очень тонкие, почти невидимые светлые пятна
+    const ff = Math.max(0, foodPool / MAX_FOOD);
+    for (const s of nutrientSpots) {
+      if (ff < 0.01) continue;
+      const ng = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.radius);
+      ng.addColorStop(0,   `rgba(255,255,255,${(0.03 * ff).toFixed(3)})`);
+      ng.addColorStop(1,   'transparent');
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+      ctx.fillStyle = ng;
+      ctx.fill();
+    }
+
+    // Край чашки
+    ctx.beginPath();
+    ctx.arc(cx, cy, PETRI_RADIUS, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Тонкий блик стекла
+    const gl = ctx.createRadialGradient(cx-65, cy-65, 0, cx-65, cy-65, 90);
+    gl.addColorStop(0, 'rgba(255,255,255,0.025)');
+    gl.addColorStop(1, 'transparent');
+    ctx.beginPath();
+    ctx.arc(cx - 65, cy - 65, 90, 0, Math.PI * 2);
+    ctx.fillStyle = gl;
+    ctx.fill();
+  }
+
+  // Вспышка антибиотика — красноватый ореол по краям чашки
+  drawAntibioticFlash(intensity) {
+    const ctx = this.ctx, cx = CANVAS_SIZE / 2, cy = CANVAS_SIZE / 2;
+    const g   = ctx.createRadialGradient(cx, cy, PETRI_RADIUS * 0.5, cx, cy, PETRI_RADIUS);
+    g.addColorStop(0,   'transparent');
+    g.addColorStop(0.7, `rgba(180,40,60,${(intensity * 0.12).toFixed(3)})`);
+    g.addColorStop(1,   `rgba(220,60,80,${(intensity * 0.28).toFixed(3)})`);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, PETRI_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Трупы рисуем ПОД живыми бактериями
+  drawCorpses(corpses) {
+    for (const c of corpses) {
+      if (!c.done) this._drawCorpse(c);
+    }
+  }
+
+  _drawCorpse(c) {
+    const ctx   = this.ctx;
+    const cfg   = TYPES[c.type];
+    const hl    = cfg.baseLen * 0.88;
+    const hw    = cfg.baseWid * 0.78;
+    const decomp = 1 - c.timer / DECOMPOSE_TIME; // 0..1 прогресс разложения
+
+    ctx.save();
+    ctx.globalAlpha = c.opacity;
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.angle);
+
+    // Тело сжимается при разложении
+    const sc = 1 - decomp * 0.28;
+    ctx.scale(sc, sc);
+
+    // Цвет: коричнево-красный → чёрный
+    const rv = Math.round(90  - decomp * 55);
+    const gv = Math.round(35  - decomp * 28);
+    const bv = Math.round(18  - decomp * 14);
+    const g  = ctx.createRadialGradient(-hl*0.2, -hw*0.3, 0, 0, 0, hl);
+    g.addColorStop(0, `rgb(${rv+38},${gv+18},${bv+8})`);
+    g.addColorStop(1, `rgb(${rv},${gv},${bv})`);
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hl, hw, 0, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(120,55,20,${(0.4*(1-decomp)).toFixed(2)})`;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Зелёный ореол разложения — питательные вещества выходят наружу
+    if (decomp > 0.45) {
+      const glowA = ((decomp - 0.45) * 1.8 * 0.18).toFixed(3);
+      const glow  = ctx.createRadialGradient(0, 0, 0, 0, 0, hl * 2.8);
+      glow.addColorStop(0,   `rgba(80,210,70,${glowA})`);
+      glow.addColorStop(0.5, `rgba(60,180,50,${(glowA*0.5).toFixed(3)})`);
+      glow.addColorStop(1,   'transparent');
+      ctx.beginPath();
+      ctx.ellipse(0, 0, hl * 2.8, hl * 2.2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  drawBacteria(bacteria) {
+    for (const b of bacteria) {
+      if (!b.dead) this._drawOne(b);
+    }
+  }
+
+  _drawOne(b) {
+    const ctx = this.ctx, cfg = TYPES[b.type];
+    const isDying    = b.state === 'dying';
+    const hl         = cfg.baseLen * b.lenScale;
+    const hw         = cfg.baseWid;
+    const hungerFade = 1 - (b.hunger || 0) * 0.6;
+    // Выживаемость влияет на яркость: слабые (vitality~0) тускло-серые
+    const vit        = b.vitality !== undefined ? b.vitality : 0.5;
+    const vitFade    = 0.35 + vit * 0.65; // 0.35..1.0
+
+    ctx.save();
+    ctx.globalAlpha = b.opacity;
+
+    if (cfg.hasFlagella && !isDying)
+      this._drawFlagella(ctx, b, hl, cfg, hungerFade * vitFade);
+
+    if (!isDying) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.angle);
+      const hr = hl * 1.8;
+      const hg = ctx.createRadialGradient(0, 0, 0, 0, 0, hr);
+      hg.addColorStop(0, `rgba(255,255,255,${(0.04 * hungerFade * vitFade).toFixed(2)})`);
+      hg.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.ellipse(0, 0, hr, hr*0.65, 0, 0, Math.PI*2);
+      ctx.fillStyle = hg; ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.angle);
+
+    if (b.state === 'splitting') {
+      this._drawSplit(ctx, b, hl, hw, cfg, hungerFade * vitFade);
+    } else {
+      // Слабые клетки сильнее обесцвечены (blendToGray зависит от vitality)
+      const grayAmount = isDying ? 0 : (b.hunger||0)*0.4 + (1 - vit) * 0.55;
+      const bColor = isDying ? '#ff8090' : blendToGray(cfg.color, Math.min(1, grayAmount));
+      const g = ctx.createRadialGradient(-hl*0.2,-hw*0.4,0,0,0,hl);
+      if (isDying) {
+        g.addColorStop(0,'#ff8090'); g.addColorStop(1,'#aa1025');
+      } else {
+        g.addColorStop(0, lighten(bColor, Math.round(30 + vit * 40)));
+        g.addColorStop(1, bColor);
+      }
+      ctx.beginPath();
+      ctx.ellipse(0,0,hl,hw,0,0,Math.PI*2);
+      ctx.fillStyle = g; ctx.fill();
+
+      ctx.strokeStyle = isDying ? 'rgba(255,64,96,0.35)' : rgba(cfg.color, 0.35 * hungerFade * vitFade);
+      ctx.lineWidth = 0.6; ctx.stroke();
+
+      if (!isDying && (b.hunger||0) < 0.7) {
+        const sh = ctx.createRadialGradient(-hl*0.3,-hw*0.5,0,-hl*0.1,-hw*0.2,hl*0.55);
+        sh.addColorStop(0, `rgba(255,255,255,${(0.15 * vitFade * (1-(b.hunger||0))).toFixed(2)})`);
+        sh.addColorStop(1,'transparent');
+        ctx.beginPath();
+        ctx.ellipse(0,0,hl,hw,0,0,Math.PI*2);
+        ctx.fillStyle = sh; ctx.fill();
+      }
+
+      // Маленькая точка в центре — индикатор выживаемости
+      // Зелёная (высокая) → серая → красная (низкая)
+      if (!isDying) {
+        const dotR = Math.max(0.8, hw * 0.35);
+        const rv   = vit > 0.5 ? Math.round(255*(1-vit)*2)  : 255;
+        const gv   = vit > 0.5 ? 200 : Math.round(200*vit*2);
+        ctx.beginPath();
+        ctx.arc(0, 0, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${rv},${gv},60,${(0.55 * vitFade).toFixed(2)})`;
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  _drawSplit(ctx, b, hl, hw, cfg, hf=1) {
+    const p    = b.splitProgress;
+    const sep  = hl * p * 0.9;
+    const bc   = blendToGray(cfg.color, (b.hunger||0)*0.62);
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(side * sep, 0);
+      const sl = hl * (1 - p * 0.12);
+      const g  = ctx.createRadialGradient(-sl*0.2,-hw*0.4,0,0,0,sl);
+      g.addColorStop(0, lighten(bc,50)); g.addColorStop(1, bc);
+      ctx.beginPath();
+      ctx.ellipse(0,0,sl,hw,0,0,Math.PI*2);
+      ctx.fillStyle=g; ctx.fill();
+      ctx.strokeStyle=rgba(cfg.color,0.35*hf); ctx.lineWidth=0.6; ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  _drawFlagella(ctx, b, hl, cfg, hf=1) {
+    const count    = cfg.flagellaCount;
+    if (!count) return;
+    const isTumble = b.mode === 'tumble';
+
+    for (let f = 0; f < count; f++) {
+      const spread    = count===1 ? 0 : (f===0 ? 0.20 : -0.20);
+      const baseAngle = b.angle + Math.PI + spread;
+      const waveLen   = hl*2.8 + (isTumble ? hl*0.5 : 0);
+      const amp       = cfg.baseWid * (isTumble ? 1.4 : 0.9);
+
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(baseAngle);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      for (let i=1; i<=28; i++) {
+        const t  = i/28;
+        const px = t*waveLen;
+        const py = isTumble
+          ? Math.sin(t*Math.PI*3.0+b.flagellaPhase)*amp*(1-t*0.5)
+          + Math.sin(t*Math.PI*5.5+b.flagellaPhase*1.7)*amp*0.4*(1-t)
+          : Math.sin(t*Math.PI*2.5+b.flagellaPhase)*amp*(1-t*0.55);
+        ctx.lineTo(px,py);
+      }
+      const alpha = (isTumble ? 0.18 : 0.26)*hf - f*0.05;
+      ctx.strokeStyle = rgba(cfg.color, Math.max(0.05, alpha));
+      ctx.lineWidth   = isTumble ? 0.7 : 1.0;
+      ctx.lineCap     = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// УТИЛИТЫ
+// ─────────────────────────────────────────────
+function sc(base, h)    { return Math.round(base * h); }
+function lighten(hex, amt) {
+  const n = parseInt(hex.replace('#',''),16);
+  return `rgb(${Math.min(255,((n>>16)&0xff)+amt)},${Math.min(255,((n>>8)&0xff)+amt)},${Math.min(255,(n&0xff)+amt)})`;
+}
+function rgba(hex, a) {
+  const n = parseInt(hex.replace('#',''),16);
+  return `rgba(${(n>>16)&0xff},${(n>>8)&0xff},${n&0xff},${a})`;
+}
+function blendToGray(hex, t) {
+  const n  = parseInt(hex.replace('#',''),16);
+  const rv = (n>>16)&0xff, gv = (n>>8)&0xff, bv = n&0xff;
+  const gr = rv*0.299 + gv*0.587 + bv*0.114;
+  return `rgb(${Math.round(rv+(gr-rv)*t)},${Math.round(gv+(gr-gv)*t)},${Math.round(bv+(gr-bv)*t)})`;
+}
+
+// ─────────────────────────────────────────────
+// КЛАСС: Симуляция
+// ─────────────────────────────────────────────
+class Simulation {
+  constructor(canvas) {
+    this.renderer = new Renderer(canvas);
+    this.bacteria = [];
+    this.corpses  = [];
+
+    this.running  = false;
+    this.lastTime = null;
+    this._frame   = 0;
+
+    this.totalDead      = 0;
+    this.totalDivisions = 0;
+    this.elapsedMs      = 0;
+
+    this.speedMult = 1;
+    this.maxPop    = 200;
+    this.killRate  = 0.70;
+
+    // ── Устойчивость к антибиотику ──────────────────────────────
+    // antibioticUses   — сколько раз применили
+    // Эффективность падает: каждое применение убивает меньший %
+    // от самых слабых. При высокой средней выживаемости — почти
+    // никого не убивает.
+    this.antibioticUses = 0;
+    this.antibioticFlash = 0; // 0..1, визуальная вспышка при применении
+
+    generateNutrients();
+    this._seed();
+  }
+
+  _seed(n=12) {
+    const cx = CANVAS_SIZE/2, cy = CANVAS_SIZE/2;
+    for (let i=0; i<n; i++) {
+      const a = Math.random()*Math.PI*2;
+      const rr = Math.random()*PETRI_RADIUS*0.45;
+      const t  = TYPE_KEYS[Math.floor(Math.random()*TYPE_KEYS.length)];
+      this.bacteria.push(new Bacterium(cx+Math.cos(a)*rr, cy+Math.sin(a)*rr, t));
+    }
+  }
+
+  spawnAt(x, y) {
+    const cx=CANVAS_SIZE/2, cy=CANVAS_SIZE/2;
+    if (Math.hypot(x-cx,y-cy) < PETRI_RADIUS-10) {
+      const t = TYPE_KEYS[Math.floor(Math.random()*TYPE_KEYS.length)];
+      this.bacteria.push(new Bacterium(x, y, t));
+    }
+  }
+
+  applyAntibiotic() {
+    const alive = this.bacteria.filter(b => b.state==='alive');
+    if (!alive.length) return { effective: 0, killed: 0, resistance: Math.round(this._resistance() * 100) };
+
+    this.antibioticUses++;
+    this.antibioticFlash = 1.0; // запускаем вспышку
+
+    /*
+      ЛОГИКА УСТОЙЧИВОСТИ:
+      ─────────────────────
+      Устойчивость = функция средней выживаемости популяции.
+      Каждое применение убивает СЛАБЕЙШИХ (сортируем по vitality).
+      После каждого применения средний vitality растёт — популяция
+      адаптируется. Со временем антибиотик убивает всё меньше.
+
+      resistance = avgVitality ^ 1.2
+        • avgVit = 0.1  → resistance ≈ 8%  → убивает ~64%
+        • avgVit = 0.4  → resistance ≈ 30% → убивает ~49%
+        • avgVit = 0.7  → resistance ≈ 61% → убивает ~27%
+        • avgVit = 0.9  → resistance ≈ 87% → убивает ~9%
+        • avgVit = 0.97 → resistance ≈ 96% → убивает ~3% (иммунитет)
+
+      Убиваем только тех, чья vitality НИЖЕ порога:
+        threshold = 1 - resistance
+      Это значит: чем выше устойчивость, тем выше планка —
+      антибиотик «не берёт» всё более сильных бактерий.
+    */
+    const avgVit    = alive.reduce((s,b) => s + b.vitality, 0) / alive.length;
+    const resistance = Math.min(0.99, Math.pow(avgVit, 1.2));
+    const threshold  = 1 - resistance;         // vitality ниже этого → уязвим
+    const effective  = this.killRate * (1 - resistance);
+    const killCount  = Math.ceil(alive.length * effective);
+
+    // Сортируем по vitality — слабейшие первые
+    alive.sort((a, b) => a.vitality - b.vitality);
+
+    let actualKilled = 0;
+    for (let i = 0; i < alive.length && actualKilled < killCount; i++) {
+      // Антибиотик убивает только тех, чья vitality ниже порога
+      if (alive[i].vitality >= threshold) break;
+      alive[i].kill();
+      this.totalDead++;
+      actualKilled++;
+    }
+
+    return {
+      effective:  Math.round(effective  * 100),
+      killed:     actualKilled,
+      resistance: Math.round(resistance * 100),
+      avgVit:     Math.round(avgVit     * 100),
+      threshold:  Math.round(threshold  * 100),
+    };
+  }
+
+  // Текущая устойчивость популяции (0..1)
+  _resistance() {
+    const alive = this.bacteria.filter(b => b.state==='alive');
+    if (!alive.length) return 0;
+    const avg = alive.reduce((s,b) => s + b.vitality, 0) / alive.length;
+    return Math.min(0.99, Math.pow(avg, 1.2));
+  }
+
+  clear() {
+    this.bacteria=[]; this.corpses=[];
+    this.elapsedMs=this.totalDead=this.totalDivisions=0;
+    chartHistory.length = 0;
+    chartLastT = 0;
+    generateNutrients();
+  }
+
+  togglePause() {
+    this.running = !this.running;
+    if (this.running) {
+      this.lastTime = performance.now();
+      requestAnimationFrame(ts => this._loop(ts));
+    }
+  }
+
+  _loop(ts) {
+    if (!this.running) return;
+
+    const dt = Math.min(ts - (this.lastTime||ts), 100);
+    this.lastTime   = ts;
+    this.elapsedMs += dt * this.speedMult;
+    this._frame++;
+
+    const toAdd = [];
+
+    // ── Обновляем бактерии ──
+    for (const b of this.bacteria) {
+
+      if (b.state === 'splitting') {
+        b.splitProgress += 0.06 * this.speedMult;
+        if (b.splitProgress >= 1) {
+          b.state='alive'; b.splitProgress=0; b.lenScale=0.6;
+        }
+        continue;
+      }
+
+      const divide = b.update(dt, this.speedMult, this.bacteria);
+
+      // Деление
+      if (divide && b.state==='alive') {
+        const live = this.bacteria.filter(x=>x.state==='alive'||x.state==='splitting').length;
+        if (live < this.maxPop) {
+          const cfg    = TYPES[b.type];
+          const sAngle = b.angle + Math.PI/2 + (Math.random()-0.5)*0.6;
+          const offset = cfg.baseLen * 1.1;
+
+          b.state='splitting'; b.splitProgress=0; b.lenScale=0.6;
+
+          const d = new Bacterium(
+            b.x+Math.cos(sAngle)*offset,
+            b.y+Math.sin(sAngle)*offset,
+            b.type, sAngle+Math.PI,
+            b.vitality  // передаём выживаемость родителя — потомок унаследует ±мутация
+          );
+          d.state='splitting'; d.splitProgress=0; d.lenScale=0.6;
+          toAdd.push(d);
+          this.totalDivisions++;
+        }
+      }
+
+      // Умершая → труп: еда добавляется МГНОВЕННО при смерти
+      if (b.dead) {
+        this.totalDead++;
+        foodPool = Math.min(MAX_FOOD, foodPool + CORPSE_FOOD);
+        this.corpses.push(new Corpse(b.x, b.y, b.type, b.angle));
+      }
+    }
+
+    this.bacteria.push(...toAdd);
+    this.bacteria = this.bacteria.filter(b => !b.dead);
+
+    // ── Обновляем трупы ──
+    for (const c of this.corpses) c.update(dt * this.speedMult);
+    this.corpses = this.corpses.filter(c => !c.done);
+
+    // ── Столкновения каждые 2 кадра ──
+    if (this._frame % 2 === 0) this._collide();
+
+    // ── Рендер: фон → вспышка антибиотика → трупы → бактерии ──
+    this.renderer.drawBackground();
+    if (this.antibioticFlash > 0) {
+      this.renderer.drawAntibioticFlash(this.antibioticFlash);
+      this.antibioticFlash = Math.max(0, this.antibioticFlash - 0.04 * this.speedMult);
+    }
+    this.renderer.drawCorpses(this.corpses);
+    this.renderer.drawBacteria(this.bacteria);
+
+    updateStats(this);
+    requestAnimationFrame(ts2 => this._loop(ts2));
+  }
+
+  _collide() {
+    const act = this.bacteria.filter(b=>b.state==='alive'||b.state==='splitting');
+    const cx=CANVAS_SIZE/2, cy=CANVAS_SIZE/2;
+    for (let i=0; i<act.length; i++) {
+      for (let j=i+1; j<act.length; j++) {
+        const a=act[i], b=act[j];
+        const dx=b.x-a.x, dy=b.y-a.y;
+        const dist=Math.sqrt(dx*dx+dy*dy)||0.001;
+        const thresh=(TYPES[a.type].baseLen+TYPES[b.type].baseLen)*0.55;
+        if (dist<thresh) {
+          const f=(thresh-dist)/thresh*0.28;
+          const fx=(dx/dist)*f, fy=(dy/dist)*f;
+          a.x-=fx; a.y-=fy; b.x+=fx; b.y+=fy;
+          for (const cell of [a,b]) {
+            const d=Math.hypot(cell.x-cx,cell.y-cy);
+            if (d>PETRI_RADIUS-7) {
+              const k=(PETRI_RADIUS-7)/d;
+              cell.x=cx+(cell.x-cx)*k; cell.y=cy+(cell.y-cy)*k;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  get aliveCount() {
+    return this.bacteria.filter(b=>b.state==='alive'||b.state==='splitting').length;
+  }
+}
+
+// ─────────────────────────────────────────────
+// ГРАФИК ПОПУЛЯЦИИ
+// ─────────────────────────────────────────────
+// Хранит точки {t, count} — одна точка в секунду игрового времени
+const chartHistory = [];
+const CHART_MAX_POINTS = 120; // 120 секунд
+let   chartLastT = 0;         // последнее записанное игровое время (сек)
+
+/*
+  Добавляет точку в историю раз в 1 игровую секунду.
+  Вызывается из updateStats каждый кадр.
+*/
+function chartPush(elapsedMs, count) {
+  const t = Math.floor(elapsedMs / 1000);
+  if (t <= chartLastT && chartHistory.length > 0) return;
+  chartLastT = t;
+  chartHistory.push(count);
+  if (chartHistory.length > CHART_MAX_POINTS) chartHistory.shift();
+}
+
+function drawChart() {
+  const canvas = document.getElementById('chartCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W   = canvas.width;
+  const H   = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Фон
+  ctx.fillStyle = '#e0e0e0';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, W, H, 6);
+  ctx.fill();
+
+  if (chartHistory.length < 2) return;
+
+  const padL = 4, padR = 4, padT = 8, padB = 6;
+  const w    = W - padL - padR;
+  const h    = H - padT - padB;
+
+  const maxVal = Math.max(...chartHistory, 1);
+  const minVal = 0;
+  const range  = maxVal - minVal || 1;
+
+  // Горизонтальные линии сетки
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth   = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + h - (i / 4) * h;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + w, y);
+    ctx.stroke();
+  }
+
+  // Функция координат точки
+  const px = (i) => padL + (i / (CHART_MAX_POINTS - 1)) * w;
+  const py = (v) => padT + h - ((v - minVal) / range) * h;
+
+  // Заливка под линией
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + h);
+  grad.addColorStop(0,   'rgba(80,80,80,0.25)');
+  grad.addColorStop(1,   'rgba(80,80,80,0.02)');
+
+  const offsetX = CHART_MAX_POINTS - chartHistory.length;
+
+  ctx.beginPath();
+  ctx.moveTo(px(offsetX), padT + h);
+  for (let i = 0; i < chartHistory.length; i++) {
+    ctx.lineTo(px(offsetX + i), py(chartHistory[i]));
+  }
+  ctx.lineTo(px(offsetX + chartHistory.length - 1), padT + h);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Линия графика
+  ctx.beginPath();
+  ctx.moveTo(px(offsetX), py(chartHistory[0]));
+  for (let i = 1; i < chartHistory.length; i++) {
+    // Сглаживание через bezier
+    const x0 = px(offsetX + i - 1), y0 = py(chartHistory[i - 1]);
+    const x1 = px(offsetX + i),     y1 = py(chartHistory[i]);
+    const cpx = (x0 + x1) / 2;
+    ctx.bezierCurveTo(cpx, y0, cpx, y1, x1, y1);
+  }
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth   = 1.5;
+  ctx.lineJoin    = 'round';
+  ctx.stroke();
+
+  // Точка последнего значения
+  const lastX = px(offsetX + chartHistory.length - 1);
+  const lastY = py(chartHistory[chartHistory.length - 1]);
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#333';
+  ctx.fill();
+
+  // Подписи min/max
+  document.getElementById('chartMin').textContent = minVal;
+  document.getElementById('chartMax').textContent = maxVal;
+}
+
+// ─────────────────────────────────────────────
+// UI
+// ─────────────────────────────────────────────
+function updateStats(sim) {
+  document.getElementById('statTotal').textContent    = sim.aliveCount;
+  document.getElementById('statDead').textContent     = sim.totalDead;
+  document.getElementById('statDiv').textContent      = sim.totalDivisions;
+  document.getElementById('statCorpses').textContent  = sim.corpses.length;
+
+  const s = Math.floor(sim.elapsedMs / 1000);
+  document.getElementById('statTime').textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+
+  // График
+  chartPush(sim.elapsedMs, sim.aliveCount);
+  drawChart();
+
+  // Средняя выживаемость и устойчивость к антибиотику
+  const alive = sim.bacteria.filter(b => b.state==='alive'||b.state==='splitting');
+  if (alive.length > 0) {
+    const avg = alive.reduce((s,b) => s + (b.vitality||0), 0) / alive.length;
+    document.getElementById('statVit').textContent  = (avg * 100).toFixed(0) + '%';
+    document.getElementById('vitBar').style.width   = (avg * 100).toFixed(1) + '%';
+    // Устойчивость к антибиотику
+    const res    = Math.min(99, Math.round(Math.pow(avg, 1.2) * 100));
+    const resEl  = document.getElementById('statResist');
+    resEl.textContent = res + '%';
+    resEl.className   = 'stat-value' + (res >= 80 ? '' : res >= 50 ? ' warn' : ' danger');
+    resEl.style.color = res >= 90 ? '#c8c8c8' : res >= 60 ? '#aaa' : res >= 30 ? '#888' : '#666';
+    // Кнопка антибиотика — тускнеет по мере иммунитета
+    const btn = document.getElementById('btnAntibiotic');
+    if (res >= 95) {
+      btn.textContent = '🛡️ Иммунитет (бессильно)';
+      btn.style.opacity = '0.35';
+    } else if (res >= 75) {
+      btn.textContent = '💊 Антибиотик (слабый)';
+      btn.style.opacity = '0.6';
+    } else if (res >= 45) {
+      btn.textContent = '💊 Антибиотик (средний)';
+      btn.style.opacity = '0.8';
+    } else {
+      btn.textContent = '💊 Добавить антибиотик';
+      btn.style.opacity = '1';
+    }
+  } else {
+    document.getElementById('statVit').textContent    = '—';
+    document.getElementById('vitBar').style.width     = '0%';
+    document.getElementById('statResist').textContent = '0%';
+  }
+  const fp  = Math.round(foodPool * 10) / 10;
+  const pct = Math.max(0, Math.min(100, foodPool / MAX_FOOD * 100));
+  document.getElementById('statFood').textContent     = fp;
+  document.getElementById('foodBar').style.width      = pct.toFixed(1) + '%';
+  document.getElementById('foodPct').textContent      = Math.round(pct) + '%';
+
+  const fe = document.getElementById('statFood');
+  fe.className = 'stat-value' + (pct < 15 ? ' danger' : pct < 40 ? ' warn' : '');
+}
+
+function showToast(msg, bg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.background = bg || '#555';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2800);
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('petriCanvas');
+const sim    = new Simulation(canvas);
+sim.renderer.drawBackground();
+sim.renderer.drawCorpses(sim.corpses);
+sim.renderer.drawBacteria(sim.bacteria);
+updateStats(sim);
+
+document.getElementById('btnStartPause').addEventListener('click', function() {
+  sim.togglePause();
+  this.textContent = sim.running ? '⏸ Пауза' : '▶ Старт';
+});
+document.getElementById('btnAddFood').addEventListener('click', () => {
+  foodPool = Math.min(MAX_FOOD, foodPool + 50);
+  showToast('🍬 +50 единиц еды добавлено');
+  updateStats(sim);
+});
+
+document.getElementById('btnAntibiotic').addEventListener('click', () => {
+  if (!sim.aliveCount) return;
+  const r = sim.applyAntibiotic();
+  if (!r) return;
+
+  let msg, bg;
+  if (r.resistance >= 95) {
+    msg = `🛡️ Полный иммунитет — антибиотик бессилен`;
+    bg  = '#4a5a4a';
+  } else if (r.killed === 0) {
+    msg = `🛡️ Никто не погиб — устойчивость ${r.resistance}%`;
+    bg  = '#4a5a4a';
+  } else if (r.resistance >= 70) {
+    msg = `⚠️ Слабый эффект: убито ${r.killed} · устойч. ${r.resistance}%`;
+    bg  = '#5a5a3a';
+  } else if (r.resistance >= 35) {
+    msg = `⚗️ Антибиотик: убито ${r.killed} слабейших · устойч. ${r.resistance}%`;
+    bg  = '#4a4a5a';
+  } else {
+    msg = `💀 Антибиотик: убито ${r.killed} (−${r.effective}%) · устойч. ${r.resistance}%`;
+    bg  = '#5a3a3a';
+  }
+
+  showToast(msg, bg);
+});
+document.getElementById('btnClear').addEventListener('click', () => {
+  sim.clear();
+  sim.renderer.drawBackground();
+  updateStats(sim);
+});
+document.getElementById('sliderSpeed').addEventListener('input', function() {
+  sim.speedMult = +this.value;
+  document.getElementById('valSpeed').textContent = this.value + '×';
+});
+document.getElementById('sliderMax').addEventListener('input', function() {
+  sim.maxPop = +this.value;
+  document.getElementById('valMax').textContent = this.value;
+});
+document.getElementById('sliderKill').addEventListener('input', function() {
+  sim.killRate = this.value / 100;
+  document.getElementById('valKill').textContent = this.value + '%';
+});
+canvas.addEventListener('click', e => {
+  const rc = canvas.getBoundingClientRect();
+  sim.spawnAt(
+    (e.clientX-rc.left)*(canvas.width/rc.width),
+    (e.clientY-rc.top)*(canvas.height/rc.height)
+  );
+  if (!sim.running) {
+    sim.renderer.drawBackground();
+    sim.renderer.drawCorpses(sim.corpses);
+    sim.renderer.drawBacteria(sim.bacteria);
+    updateStats(sim);
+  }
+});
+</script>
+<div class="signature">Виноградов Дима 9б</div>
+</body>
+</html>
